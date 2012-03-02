@@ -1,0 +1,780 @@
+<?php
+
+/**
+ * @file
+ * Integrates ONEsite SSO into the Drupal powered site.
+ */
+
+/** Defines REST API url. */
+defined('ONESITESSO_REST_URL')
+  or define('ONESITESSO_REST_URL', 'https://services.onesite.com');
+
+/** Defines XML-RPC API url. */
+defined('ONESITESSO_XMLRPC_URL')
+  or define('ONESITESSO_XMLRPC_URL', 'https://services.onesite.com:8848/RPC2');
+
+/** Debug mode will write to the log file. */
+defined('ONESITESSO_DEBUG')
+  or define('ONESITESSO_DEBUG', false);
+
+/** Path to the debug log. */
+defined('ONESITESSO_LOG')
+  or define('ONESITESSO_LOG', '/tmp/onesitesso.log');
+
+/** Include onesite php sdk. */
+include_once dirname(__FILE__) . '/onesite-php-sdk/src/com/onesite/sdk.php';
+$sdk = null;
+$onesitesso_session = null;
+
+/**
+ * Implements hook_menu().
+ * 
+ * @return array
+ */
+function onesitesso_menu()
+{
+	$items = array();
+	
+	// Admin settings.
+	$items['admin/settings/onesitesso'] = array(
+		'title'            => 'ONEsite SSO',
+		'description'      => 'Configure the settings for ONEsite SSO.',
+		'page callback'    => 'onesitesso_menu_admin_settings',
+		'access callback'  => 'user_access',
+		'access arguments' => array('Administer ONEsite SSO'),
+		'type'             => MENU_NORMAL_ITEM,
+	);
+	$items['admin/settings/onesitesso/settings'] = array(
+		'title'            => 'Settings',
+		'page callback'    => 'onesitesso_menu_admin_settings',
+		'access arguments' => array('Administer Site Configuration'),
+		'type'             => MENU_DEFAULT_LOCAL_TASK,
+	);
+	
+	// Keymaster landing.
+	$items['onesitesso/keymaster_landing'] = array(
+		'title'            => 'ONEsite SSO Keymaster Landing Page',
+		'page callback'    => 'onesitesso_keymaster_landing',
+		'access callback'  => true,
+		'type'             => MENU_CALLBACK,
+	);
+	
+	return $items;
+}
+
+/**
+ * Impelemnts hook_menu_admin_settings().
+ * 
+ * Handles settings administration. Called when admin settings menu
+ * is displayed. Show onesitesso admin form. Show success message
+ * just after settings submission.
+ * 
+ * @return string
+ */
+function onesitesso_menu_admin_settings()
+{
+	if (variable_get('onesitesso_form_submitted', false)) {
+		drupal_set_message(t('Your settings have been updated.'));
+		variable_set('onesitesso_form_submitted', false);
+	}
+	
+	return drupal_get_form('onesitesso_menu_admin_settings_form');
+}
+
+/**
+ * Implements hook_menu_admin_settings_form().
+ * 
+ * Builds the onesite_sso admin form.
+ * 
+ * @return array
+ */
+function onesitesso_menu_admin_settings_form()
+{
+	$form = array();
+	
+	$form['devkey'] = array(
+		'#type'        => 'fieldset',
+		'#title'       => t('ONEsite Services Devkey'),
+		'#collapsible' => false,
+		'#description' => t('Enter your ONEsite services devkey.'),
+	);
+	$form['devkey']['onesitesso_services_devkey'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite Services Devkey'),
+		'#default_value' => variable_get('onesitesso_services_devkey', ''),
+		'#description'   => t('Your ONEsite services devkey.'),
+	);
+	
+	$form['options'] = array(
+		'#type'        => 'fieldset',
+		'#title'       => t('ONEsite Configuration Options (Advanced)'),
+		'#collapsible' => true,
+		'#collapsed'   => true,
+		'#description' => t('Setup the ONEsite widget properties. Several of '
+			. 'these fields should be auto-detected from your ONEsite Services '
+			. 'Devkey.'),
+	);
+	$form['options']['onesitesso_widget_devkey'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite Widget Devkey'),
+		'#default_value' => variable_get('onesitesso_widget_devkey', ''),
+		'#description'   => t('Your ONEsite widget devkey.'),
+	);
+	$form['options']['onesitesso_network_domain'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite Network Domain'),
+		'#default_value' => variable_get('onesitesso_network_domain', ''),
+		'#description'   => t('Your ONEsite network domain.'),
+	);
+	$form['options']['onesitesso_widget_domain'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite Widget Domain'),
+		'#default_value' => variable_get('onesitesso_widget_domain', ''),
+		'#description'   => t('Your ONEsite Widget Domain.'),
+	);
+	$form['options']['onesitesso_node_id'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite Node ID'),
+		'#default_value' => variable_get('onesitesso_node_id', ''),
+		'#description'   => t('Your ONEsite network identifier.'),
+	);
+	$form['options']['onesitesso_partner_id'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite partner id'),
+		'#default_value' => variable_get('onesitesso_partner_id', ''),
+		'#description'   => t('Your numeric onesite partner id.'),
+	);
+	$form['options']['onesitesso_partner_name'] = array(
+		'#type'          => 'textfield',
+		'#title'         => t('ONEsite partner name'),
+		'#default_value' => variable_get('onesitesso_partner_name', ''),
+		'#description'   => t('Your onesite partner name.'),
+	);
+	
+	$unique_site_id = variable_get('onesitesso_unique_site_id', 'NOT YET SET');
+	$form['options']['onesitesso_unique_site_id'] = array(
+		'#type'   => 'markup',
+		'#markup' => '<b>Unique site ID</b><br />' . $unique_site_id,
+	);
+	
+	$form['#submit'][] = 'onesitesso_menu_admin_settings_submit';
+	$form['buttons']['submit'] = array(
+		'#type'  => 'submit',
+		'#value' => t('Save')
+	);
+	
+	return $form;
+}
+
+/**
+ * Handles admin settings form submission. Saves the admin settings.
+ * Fetch settings from devkey, if asked.
+ * 
+ * @return void
+ */
+function onesitesso_menu_admin_settings_submit()
+{
+	$devkey = $_POST['onesitesso_services_devkey'];
+	
+	if (variable_get('onesitesso_services_devkey', '*') == $devkey) {
+		// Save settings submitted in $_POST.
+		$options = $_POST;
+	} else {
+		// New devkey entered. Fetch settings devkey.
+		$old_devkey = variable_get('onesitesso_services_devkey', '');
+		variable_set('onesitesso_services_devkey', $devkey);
+		
+		$sdk = new onesite_sdk(variable_get('onesitesso_services_devkey'));
+		$response = $sdk->getIntegrationInfo();
+		if (empty($response)) {
+			drupal_set_message(t(
+				"Error fetching configuration from devkey. Please ensure you "
+				. "entered the correct devkey. Contact ONEsite Support if you "
+				. "continue to have issues."
+			),'error');
+			//variable_set('onesitesso_services_devkey', $old_devkey);
+			return;
+		}
+		
+		$widget_devkey = current($response['widget_devkeys']);
+		$options = array(
+			'onesitesso_node_id'        => (string) $response['node_id'],
+			'onesitesso_network_domain' => (string) $response['domain'],
+			'onesitesso_partner_id'     => (string) $response['partner_id'],
+			'onesitesso_partner_name'   => (string) $response['partner_name'],
+			'onesitesso_widget_domain'  => 'widgets.' . $response['domain'],
+			'onesitesso_widget_devkey'  => (string) $widget_devkey['devkey'],
+		);
+		
+		// Link installer to onesite admin user_id, if needed.
+		global $user;
+		if ($user->uid
+			&& $user->uid == variable_get('onesitesso_installer_id', 0)
+			&& !empty($response['admin_user_id'])
+			&& variable_get('onesitesso_unique_site_id', '')
+		) {
+			$ext_acct = $sdk->newExternalAccount();
+			$ext_acct->providerName = 'drupal-' . variable_get('onesitesso_unique_site_id');
+			$ext_acct->userIdentifier = $user->uid;
+			$onesite_user = $sdk->newUser();
+			$onesite_user->id = $response['admin_user_id'];
+			$sdk->getUserApi()->addExternalAccount($onesite_user, $ext_acct);
+		}
+	}
+	
+	// Save updated settings.
+	variable_set(
+		'onesitesso_widget_devkey',
+		$options['onesitesso_widget_devkey']
+	);
+	variable_set(
+		'onesitesso_network_domain',
+		$options['onesitesso_network_domain']
+	);
+	variable_set(
+		'onesitesso_widget_domain',
+		$options['onesitesso_widget_domain']
+	);
+	variable_set(
+		'onesitesso_node_id',
+		$options['onesitesso_node_id']
+	);
+	variable_set(
+		'onesitesso_partner_id',
+		$options['onesitesso_partner_id']
+	);
+	variable_set(
+		'onesitesso_partner_name',
+		$options['onesitesso_partner_name']
+	);
+	
+	variable_set('onesitesso_form_submitted', true);
+}
+
+/**
+ * Implements hook_page_build().
+ * 
+ * Adds social login modal to the page bottom.
+ * 
+ * @param array $page
+ * 
+ * @return string
+ */
+function onesitesso_page_build(&$page)
+{
+	global $user;
+	if ($user->uid) {
+		return;
+	}
+	
+	$devkey       = variable_get('onesitesso_widget_devkey',  '');
+	$network_dom  = variable_get('onesitesso_network_domain', '');
+	$widget_dom   = variable_get('onesitesso_widget_domain',  '');
+	
+	$path = drupal_get_path('module', 'onesitesso');
+	$callback_url = url('', array('absolute' => true)).$path.'/connection.html';
+	
+	$widget = <<<WIDGET
+	<script type="text/javascript">
+	//<![CDATA[
+		document.write(
+			'<script type="text/javascript" src="'
+			+ 'http://{$widget_dom}/js/socialLogin/display'
+			+ '?one_widget_node={$network_dom}'
+			+ '&devkey={$devkey}'
+			+ '&callback_url={$callback_url}'
+			+ '&load_profile=true'
+			+ '&view=modal'
+			+ '"><' + '/script>'
+		);
+	//]]>
+	</script>
+WIDGET;
+	
+	$page['page_bottom']['onesitesso_footer'] = array(
+		'#type'   => 'markup',
+		'#markup' => $widget,
+	);
+}
+
+/**
+ * Implements hook_form_user_login_alter().
+ * 
+ * Overrides user login form. Provide link to social login widget.
+ * 
+ * @return void
+ */
+function onesitesso_form_user_login_alter(&$form, &$form_state, $form_id)
+{
+	onesitesso_form_user_login_block_alter($form, $form_state, $form_id);
+}
+
+/**
+ * Implements hook_form_user_login_block_alter().
+ * 
+ * Overrides user login form. Provide link to social login widget.
+ * 
+ * @return void
+ */
+function onesitesso_form_user_login_block_alter(&$form, &$form_state, $form_id)
+{
+	// Hide standard login form elements.
+	if (isset($form['name']))    unset($form['name']);
+	if (isset($form['pass']))    unset($form['pass']);
+	if (isset($form['links']))   unset($form['links']);
+	if (isset($form['actions'])) unset($form['actions']);
+	
+	// Add link to launch social login modal.
+	$t = get_t();
+	$txt_login = $t('Login');
+	$value = '<a '
+		. 'id="socialLoginLinkLogin" '
+		. 'href="#" '
+		. 'class="button" '
+		. 'onclick="oneSocialLogin.init(); return false;"'
+	. '>'
+		. '<span>' . $txt_login . '</span>'
+	. '</a>';
+	if ('user_login' == $form_id) {
+		$value .= '<script type="text/javascript">'
+			. 'jQuery(function () {'
+				. 'oneSocialLogin.init();'
+			. '});'
+		. '</script>';
+	}
+	
+	$form['onesitesso_user_login_link'] = array(
+		'#type'   => 'item',
+		'#markup' => $value,
+	);
+}
+
+/**
+ * Implements hook_form_user_register_form_alter().
+ * 
+ * Overrides user signup form. Provide link to social login widget.
+ * 
+ * @return void
+ */
+function onesitesso_form_user_register_form_alter(&$form, &$form_state, $form_id)
+{
+	// Hide standard login form elements.
+	if (isset($form['actions'])) unset($form['actions']);
+	if (isset($form['account'])) unset($form['account']);
+	
+	// Add link to launch social login modal.
+	$t = get_t();
+	$txt_login = $t('Create Account');
+	$value = '<a '
+		. 'id="socialLoginLinkLogin" '
+		. 'href="#" '
+		. 'class="button" '
+		. 'onclick="oneSocialLogin.init(); return false;"'
+	. '>'
+		. '<span>' . $txt_login . '</span>'
+	. '</a>'
+	. '<script type="text/javascript">'
+		. 'jQuery(function () {'
+			. 'oneSocialLogin.init();'
+			. 'jQuery("#oneSignupLinkAjax").trigger("click");'
+		. '});'
+	. '</script>';
+	
+	$form['onesitesso_user_login_link'] = array(
+		'#type'   => 'item',
+		'#markup' => $value,
+	);
+}
+
+/**
+ * Implements hook_form_user_pass_alter().
+ * 
+ * Overrides reset password form. Provide link to social login widget.
+ * 
+ * @return void
+ */
+function onesitesso_form_user_pass_alter(&$form, &$form_state, $form_id)
+{
+	// Hide standard login form elements.
+	if (isset($form['name']))    unset($form['name']);
+	if (isset($form['actions'])) unset($form['actions']);
+	
+	// Add link to launch social login modal.
+	$t = get_t();
+	$txt_login = $t('Recover Password');
+	$value = '<a '
+		. 'id="socialLoginLinkLogin" '
+		. 'href="#" '
+		. 'class="button" '
+		. 'onclick="oneSocialLogin.init(); return false;"'
+	. '>'
+		. '<span>' . $txt_login . '</span>'
+	. '</a>'
+	. '<script type="text/javascript">'
+		. 'jQuery(function () {'
+			. 'oneSocialLogin.init();'
+			. 'jQuery("#forgotPassword").trigger("click");'
+		. '});'
+	. '</script>';
+	
+	$form['onesitesso_reset_pass_link'] = array(
+		'#type'   => 'item',
+		'#markup' => $value,
+	);
+}
+
+/**
+ * Implements hook_help().
+ * 
+ * @return string
+ */
+function onesitesso_help($path, $arg)
+{
+	switch ($path) {
+		case 'admin/help#onesitesso':
+			return check_markup(
+				file_get_contents(dirname(__FILE__) . "/README.txt")
+			);
+	}
+}
+
+/**
+ * Implements hook_install().
+ * 
+ * @return void
+ */
+function onesitesso_install() {
+	// Generate unique site id if not yet set.
+	if (!variable_get('onesitesso_unique_site_id', false)) {
+		variable_set('onesitesso_unique_site_id', md5(rand(0, 999999999)));
+	}
+	
+	global $user;
+	variable_set('onesitesso_installer_id', $user->uid);
+	
+	drupal_set_message(st(
+		"Your ONEsite SSO settings are available under !link",
+		array(
+			'!link' => l(
+				st('Home > Administration > ONEsite SSO'),
+				'admin/settings/onesitesso/settings'
+			)
+		)
+	));
+}
+
+/**
+ * Implements hook_user_logout().
+ * 
+ * Handle 3rd party logout. Log them out from ONEsite.
+ * 
+ * @param object $account
+ * 
+ * @return void
+ */
+function onesitesso_user_logout($account)
+{
+	$sdk = onesitesso_sdk();
+	if (!$sdk) {
+		return;
+	}
+	
+	global $onesitesso_session;
+	if (!$onesitesso_session) {
+		return;
+	}
+	
+	$sdk->getSessionApi()->logout($onesitesso_session);
+}
+
+/**
+ * Impelements hook_init().
+ * 
+ * Perform Federated SSO tasks. Sync login/logout state with ONEsite.
+ * 
+ * @return void
+ */
+function onesitesso_init()
+{
+	global $user, $onesitesso_session;
+	
+	// Generate unique site id if not yet set.
+	if (!variable_get('onesitesso_unique_site_id', false)) {
+		variable_set('onesitesso_unique_site_id', md5(rand(0, 999999999)));
+	}
+	
+	$sdk = onesitesso_sdk();
+	if (!$sdk) {
+		// Plugin is not yet setup (no devkey).
+		return;
+	}
+	
+	if (!empty($_REQUEST['skip_keycheck'])) {
+		return;
+	}
+	
+	// Disable seemless flows if logged in as setting onesitesso_installer_id.
+	if ($user->uid && $user->uid == variable_get('onesitesso_installer_id', 0)) {
+		return;
+	}
+	
+	// Fetch session id if we do not have one.
+	if (empty($_COOKIE['core_u'])) {
+		$redirect_url = url(
+			'onesitesso/keymaster_landing',
+			array('absolute' => true)
+		);
+		
+		$response = $sdk->getSessionApi()->joinCrossDomain(
+			$redirect_url . '?skip_keycheck=1',
+			variable_get('onesitesso_network_domain')
+		);
+		
+		header('Location: ' . $response);
+		exit;
+	}
+	
+	// Perform session check to look for change in session state.
+	$onesitesso_session = $sdk->newSession();
+	$onesitesso_session->coreU = $_COOKIE['core_u'];
+	$onesitesso_session->coreX = $_COOKIE['core_x'];
+	$sdk->getSessionApi()->check($onesitesso_session);
+	
+	// Is session no longer valid?
+	if (!$onesitesso_session->isValid()) {
+		// Remove session id so a new valid one may be fetched.
+		setcookie('core_u', 'deleted', time() - 3600, '/');
+		setcookie('core_x', 'deleted', time() - 3600, '/');
+	}
+	// Is user logged in on ONEsite but not locally?
+	else if (!$onesitesso_session->isAnonymous() && !$user->uid) {
+		// Logged-in user detected. Log in locally.
+		onesitesso_logged_in_user_detected($onesitesso_session->user);
+	}
+	// Is user logged out on ONEsite but logged in locally?
+	else if ($onesitesso_session->isAnonymous() && $user->uid) {
+		// Log out user locally.
+		session_destroy();
+		
+		// Remove session id so a new valid one may be fetched.
+		setcookie('core_u', 'deleted', time() - 3600, '/');
+		setcookie('core_x', 'deleted', time() - 3600, '/');
+	}
+}
+
+/**
+ * Handle keymaster redirect landing called when user hits URL
+ * /onesitesso/keymaster_landing. Set the recieved core_u and core_x values as
+ * cookies on this domain.
+ * 
+ * @return void
+ */
+function onesitesso_keymaster_landing()
+{
+	if (empty($_GET['oned'])) {
+		drupal_goto();
+	}
+	
+	$tmp_parts = explode(',', base64_decode($_GET['oned']));
+	$parts = array();
+	foreach ($tmp_parts as $tmp_part) {
+		$tmp_part_parts = explode('=', $tmp_part);
+		$parts[$tmp_part_parts[0]] = $tmp_part_parts[1];
+	}
+	
+	if (empty($parts['core_u'])) {
+		drupal_goto();
+	}
+	
+	setcookie('core_u', $parts['core_u'], 2147483647, '/');
+	setcookie('core_x', $parts['core_x'], 2147483647, '/');
+	
+	drupal_goto();
+}
+
+/**
+ * Logged in user was detected on ONEsite. Log them in locally. If not
+ * already linked to a ONEsite account, we will attempt to match a
+ * local user by email address. If that fails, we will create a new
+ * local user.
+ * 
+ * @param integer $onesite_user_id ONEsite user id.
+ * 
+ * @return void
+ */
+function onesitesso_logged_in_user_detected($onesite_user)
+{
+	global $user;
+	if ($user->uid) {
+		return;
+	}
+	if (!$onesite_user) {
+		return;
+	}
+	
+	$sdk = onesitesso_sdk();
+	
+	// Do we have a local user already linked to this ONEsite user?
+	$ext_acct = $sdk->newExternalAccount();
+	$ext_acct->providerName = 'drupal-' . variable_get('onesitesso_unique_site_id');
+	$sdk->getUserApi()->getExternalAccount($onesite_user, $ext_acct);
+	
+	// Log in matching user.
+	if ($ext_acct->userIdentifier) {
+		// Remove installer_id check.
+		if ($ext_acct->userIdentifier == variable_get('onesitesso_installer_id', 0)) {
+			variable_set('onesitesso_installer_id', 0);
+		}
+		
+		$user_login_submit = array('uid' => $ext_acct->userIdentifier);
+		user_login_submit(array(), $user_login_submit);
+		return;
+	}
+	
+	// Are there any matching local users with the ONEsite user email address?
+	$matching_user = user_load_by_mail($onesite_user->email);
+	
+	// Create new local user if no matching user found.
+	if (!$matching_user) {
+		// Find available username.
+		$new_name = false;
+		$loop = 0;
+		while ($loop < 20) {
+			$tmp_name = $onesite_user->username;
+			if ($loop > 0) {
+				$tmp_name .= $loop;
+			}
+			
+			$user_exists = user_load_by_name($tmp_name);
+			if (!$user_exists) {
+				$new_name = $tmp_name;
+				break;
+			}
+			
+			$loop++;
+		}
+		if (!$new_name) {
+			return;
+		}
+		
+		$matching_user = user_save(null, array(
+			'name'   => $new_name,
+			'pass'   => user_password(),
+			'mail'   => $onesite_user->email,
+			'status' => 1,
+		));
+	}
+	
+	// Link new user to ONEsite user.
+	$ext_acct->userIdentifier = $matching_user->uid;
+	$sdk->getUserApi()->addExternalAccount($onesite_user, $ext_acct);
+	
+	// Remove installer_id check.
+	if ($ext_acct->userIdentifier == variable_get('onesitesso_installer_id', 0)) {
+		variable_set('onesitesso_installer_id', 0);
+	}
+	
+	// Log in matching user.
+	$user_login_submit = array('uid' => $matching_user->uid);
+	user_login_submit(array(), $user_login_submit);
+}
+
+/**
+ * Return the onesite php sdk instance.
+ * 
+ * @return asdf
+ */
+function onesitesso_sdk()
+{
+	if (!variable_get('onesitesso_services_devkey')) {
+		return null;
+	}
+
+	global $sdk;
+
+	if (null === $sdk) {
+		$sdk = new onesite_sdk(variable_get('onesitesso_services_devkey'));
+	}
+
+	return $sdk;
+}
+
+/**
+ * Helpful debug utility.
+ * 
+ * @param mixed $arr
+ * 
+ * @return void
+ */
+function dar($arr)
+{
+	trigger_error("<pre class='onesitessoDar'>" . print_r($arr, true) . "</pre>");
+}
+
+/**
+ * Writes a log message if debug mode is on.
+ * 
+ * @param mixed $msg
+ * 
+ * @return void
+ */
+function onesitesso_log($msg)
+{
+	if (!ONESITESSO_DEBUG) {
+		return;
+	}
+	static $logger;
+	if (!isset($logger)) {
+		$logger = new onesitesso_logger();
+	}
+	$logger->log($msg);
+}
+
+/**
+ * Logger Class
+ */
+class onesitesso_logger
+{
+	/**
+	 * Stores log messages.
+	 * 
+	 * @var array
+	 */
+	protected $_msgs = array();
+	
+	/**
+	 * Creates a log entry.
+	 * 
+	 * @param mixed $msg
+	 * 
+	 * @return onesitesso_logger
+	 */
+	public function log($msg)
+	{
+		if (!is_string($msg)) {
+			$msg = print_r($msg, true);
+		}
+		$this->_msgs[] = date('').$msg.PHP_EOL;
+		return $this;
+	}
+	
+	/**
+	 * Writes the log entries.
+	 * 
+	 * @return void
+	 */
+	public function __destruct()
+	{
+		$msgs = implode('', $this->_msgs);
+		
+		if (preg_match('/.+?@.+?\..+/', ONESITESSO_LOG)) {
+			$domain = $_SERVER['HTTP_HOST'];
+			$domain = preg_replace('/^www./', '', $domain);
+			mail(ONESITESSO_LOG, 'onesitesso log', $msgs,
+			     'From: onesitesso@'.$domain);
+		} else {
+			$msgs = '<- START ->'.PHP_EOL.PHP_EOL.$msgs.'<- END ->'.PHP_EOL;
+			file_put_contents(ONESITESSO_LOG, $msgs, FILE_APPEND);
+		}
+	}
+}
