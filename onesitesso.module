@@ -433,7 +433,7 @@ function onesitesso_help($path, $arg)
 	switch ($path) {
 		case 'admin/help#onesitesso':
 			return check_markup(
-				file_get_contents(dirname(__FILE__) . "/README.txt")
+				file_get_contents(dirname(__FILE__) . "/README.md")
 			);
 	}
 }

@@ -1,11 +1,9 @@
-; $Id$
 name = "ONEsite SSO"
 description = Integrates ONEsite SSO into the Drupal powered site.
 core = 7.x
-php = 5.2
+package = "ONEsite SSO"
+configure = admin/settings/onesitesso
 
 version = "7.x-1.0"
-core = "7.x"
-project = "onesitesso"
+project = "onesite"
 datestamp = "1329839442"
-;project status url = "http://www.onesite.com/drupal"
