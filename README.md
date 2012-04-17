@@ -1,37 +1,49 @@
-ONEsite SSO provides a powerful single sign-on solution for your Drupal-powered sites. Extend the capabilities of your site to easily engage with new customers, create a vibrant community around your products, and increase customer conversions.
+# ONEsite SSO Drupal Plugin
 
-FEATURES
---------
-* Give your users a single, seamless, login for all of your sites.
-* Authenticate users via Facebook, Twitter, MySpace, and other OpenID providers.
-* Allow your users to link multiple social accounts to their master account.
-
-This module will override the default login and registration forms providing, instead, a link to launch the ONEsite Social Login modal window. This modal will be responsible for authenticating and registering a user on your site.
-
-REQUIREMENTS
-------------
-A development key is required to interact with any of the ONEsite services. See the installation instructions below for registering with ONEsite.
+Contributors: onesitedev
+Tags: single sign on, SSO, registration, login
 
 
-INSTALLATION
-------------
-### Step 1: Setting up your ONEsite account
-1. [Sign up for an account](http://www.onesite.com/node/ssoSignup) on ONEsite.com.
-   You will receive a devkey and an email confirmation.
-2. To enable social providers for authentication (Facebook, Twitter, etc…):
-	1. You will need to set up your own 'application' on each of the
-	   Social Networks you would like to integrate with on your site.
-	2. Log in to the [ONEsite control panel](https://admin.onesite.com).
-	3. Go to this page: "Plugins" > "Social Integration" > "Settings"
-	4. Enable each of the providers you require. Make sure you enter any
-	   required API keys or integration info for each provider.
-	   
+## Overview
 
-### Step 2: Installing the ONEsite SSO module on your Drupal site
-1. Download the module and
-   <a href="http://drupal.org/documentation/install/modules-themes/modules-7">install per the usual process</a>.
-2. Go to Home > Administration > ONEsite SSO.
-3. Paste the ONEsite SSO Devkey you received from creating your ONEsite account and hit "Save". At this point Drupal will connect to the ONEsite servers to discover details about your account and will automatically adjust the other (advanced) settings.
-4. Your current Drupal user will now be linked to the admin user on ONEsite. To complete this process you will need to log out of Drupal and log back in using your ONEsite user credentials. You should then be logged in on both ONEsite and your Drupal site.
+The ONEsite Drupal plugin allows you to utilize core ONEsite SSO and social technology to extend the capabilities of your Drupal site, easily engage with new users, and create your own vibrant community around your posts.
 
-Visit the [ONEsite Developer Portal](http://developer.onesite.com) for more information about our plugins and SDKs.
+### Features 
+
+This plugin will override the default login and registration forms and provide a link to launch the ONEsite Social Login modal window. This modal will be responsible for authenticating and registering a user on your site.
+
+ * Give your users a single, seamless, login for all of your sites.
+ * Authenticate users via Facebook, Twitter, MySpace, and other OpenID providers.
+ * Allow your users to link multiple social accounts to their master account.
+
+### Requirements
+
+No additional software or hardware is required on your Drupal server. However, the plugin does require a valid ONEsite devkey in order to link your Drupal installation to a ONEsite account.
+
+Request your free ONEsite devkey at (http://onesite.com/node/ssoSignup)
+
+## Plugin Setup
+
+Please ensure that your Drupal installation is fully completed before attempting to add this or other plugins to your server.
+
+### Installation
+
+The ONEsite Drupal plugin is available from the following locations:
+
+ * [ONEsite Developer Portal] (http://developer.onesite.com/plugins)
+ * [ONEsite @ GitHub] (https://github.com/onesite/onesite-sso-drupal-plugin)
+ 
+### Manual Installation
+
+If you have chosen to download the plugin from ONEsite or GitHub, please adhere to the following steps:
+
+ 1. Download the plugin and install per the Drupal installation standards.
+ 2. From your Drupal site click on Dashboard and navigate to Home > Administration > Modules > ONEsite SSO.  ONEsite will be listed below all the core Drupal modules.
+ 3. Click on Configure,  enter your ONEsite devkey in the space provided and hit Save.  This will update all the options under Advanced configuration automatically.
+ 4. Log out of your Drupal admin account and log back in.
+
+Note: Once installed and activated on your network, the Social Login modal replaces both the normal user login and registration points, but also the admin login interface.
+
+### Automated Installation
+
+At this time, only manual installation of this plugin is available.
